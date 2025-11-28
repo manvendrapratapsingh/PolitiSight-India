@@ -1,0 +1,325 @@
+
+import React, { useState, useEffect } from 'react';
+import { Report, SectionType, ReportSection } from '../types';
+import { AnalysisBarChart, AnalysisPieChart, AnalysisLineChart } from './Charts';
+import { Icons } from './Icons';
+import ReactMarkdown from 'react-markdown';
+
+interface ReportViewProps {
+  report: Report;
+  onReset: () => void;
+}
+
+const InsightCard = ({ insight }: { insight: Report['keyInsights'][0] }) => {
+  const Icon = insight.icon === 'trend-up' ? Icons.TrendUp : 
+               insight.icon === 'trend-down' ? Icons.TrendDown : 
+               insight.icon === 'alert' ? Icons.Alert : Icons.Info;
+  
+  const defaultColor = insight.icon === 'trend-up' ? '#10B981' : 
+                       insight.icon === 'trend-down' ? '#EF4444' : 
+                       insight.icon === 'alert' ? '#F59E0B' : '#3B82F6';
+
+  return (
+    <div className="glass-card p-5 rounded-2xl border-l-4 hover:translate-y-[-2px] transition-transform duration-300" style={{ borderLeftColor: insight.color || defaultColor }}>
+      <div className="flex items-start justify-between mb-2">
+        <Icon size={24} color={insight.color || defaultColor} />
+        {insight.value && (
+          <span className="font-display font-bold text-xl text-white dark:text-black print:text-black">{insight.value}</span>
+        )}
+      </div>
+      <p className="text-slate-300 text-sm font-medium leading-relaxed">{insight.text}</p>
+    </div>
+  );
+};
+
+const SectionRenderer = ({ section, forceExpand }: { section: ReportSection, forceExpand: boolean }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  useEffect(() => {
+    if (forceExpand) {
+      setIsExpanded(true);
+    }
+  }, [forceExpand]);
+
+  return (
+    <div id={section.id} className="mb-10 scroll-mt-28 break-inside-avoid">
+      <div 
+        className="flex items-center justify-between cursor-pointer group mb-4 no-print"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <h2 className="text-2xl font-display font-bold text-white group-hover:text-cyan-400 transition-colors">
+          {section.title}
+        </h2>
+        <div className={`p-2 rounded-full hover:bg-white/5 transition-colors ${isExpanded ? 'rotate-180' : ''}`}>
+           <Icons.ChevronDown size={20} className="text-slate-400" />
+        </div>
+      </div>
+      
+      {/* Print-only Header */}
+      <h2 className="hidden print:block text-2xl font-display font-bold text-black mb-4">
+        {section.title}
+      </h2>
+
+      {isExpanded && (
+        <div className="animate-fade-in print:animate-none">
+          <div className="prose prose-invert prose-p:text-slate-300 prose-headings:text-white prose-strong:text-cyan-200 max-w-none mb-6 print:prose-p:text-black print:prose-headings:text-black print:prose-strong:text-black">
+            <ReactMarkdown>{section.content}</ReactMarkdown>
+          </div>
+          
+          <div className="break-inside-avoid">
+            {section.type === SectionType.BAR_CHART && section.chartData && (
+              <AnalysisBarChart data={section.chartData} config={section.chartConfig} />
+            )}
+            {section.type === SectionType.PIE_CHART && section.chartData && (
+              <AnalysisPieChart data={section.chartData} config={section.chartConfig} />
+            )}
+            {section.type === SectionType.LINE_CHART && section.chartData && (
+              <AnalysisLineChart data={section.chartData} config={section.chartConfig} />
+            )}
+          </div>
+        </div>
+      )}
+      <hr className="border-white/5 mt-8 print:border-gray-200" />
+    </div>
+  );
+};
+
+export const ReportView: React.FC<ReportViewProps> = ({ report, onReset }) => {
+  const [activeSection, setActiveSection] = useState<string>(report.sections[0]?.id);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showToast, setShowToast] = useState(false);
+
+  // Simple scroll spy logic
+  useEffect(() => {
+    const handleScroll = () => {
+      const sections = report.sections.map(s => document.getElementById(s.id));
+      const scrollPosition = window.scrollY + 150; // Offset
+
+      for (const section of sections) {
+        if (section && section.offsetTop <= scrollPosition && (section.offsetTop + section.offsetHeight) > scrollPosition) {
+          setActiveSection(section.id);
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [report.sections]);
+
+  const scrollToSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      window.scrollTo({
+        top: element.offsetTop - 100,
+        behavior: 'smooth'
+      });
+      setActiveSection(id);
+    }
+  };
+
+  const handleShare = () => {
+    const textToShare = `Check out this political analysis report: "${report.title}"\n\nExecutive Summary:\n${report.executiveSummary}\n\nGenerated by PolitiSight India`;
+    navigator.clipboard.writeText(textToShare).then(() => {
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+    });
+  };
+
+  const handleExport = () => {
+    window.print();
+  };
+
+  // Filter sections based on search query
+  const filteredSections = React.useMemo(() => {
+    if (!searchQuery.trim()) return report.sections;
+    const lowerQuery = searchQuery.toLowerCase();
+    return report.sections.filter(
+      section => 
+        section.title.toLowerCase().includes(lowerQuery) || 
+        section.content.toLowerCase().includes(lowerQuery)
+    );
+  }, [report.sections, searchQuery]);
+
+  return (
+    <div className="min-h-screen bg-dark-bg pb-20 print:bg-white print:pb-0">
+      
+      {/* Toast Notification */}
+      {showToast && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 animate-slide-up border border-slate-700">
+          <Icons.Info size={18} className="text-cyan-400" />
+          <span>Report summary copied to clipboard!</span>
+        </div>
+      )}
+
+      {/* Top Navigation Bar */}
+      <nav className="fixed top-0 left-0 right-0 h-16 bg-dark-bg/80 backdrop-blur-md z-50 border-b border-white/5 px-6 flex items-center justify-between no-print">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={onReset}>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+             <Icons.Activity size={18} className="text-white" />
+          </div>
+          <span className="font-display font-bold text-white text-lg tracking-tight hidden sm:block">PolitiSight</span>
+        </div>
+        
+        <div className="flex items-center gap-4 flex-1 justify-end">
+          {/* Search within report */}
+          <div className="relative group max-w-md w-full sm:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Icons.Search size={14} className="text-slate-500" />
+            </div>
+            <input 
+              type="text" 
+              placeholder="Find in report..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-800/50 border border-white/10 rounded-full py-1.5 pl-9 pr-4 text-sm text-white placeholder-slate-500 focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-violet-500 transition-all"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-white"
+              >
+                <Icons.Close size={14} />
+              </button>
+            )}
+          </div>
+
+          <button 
+            onClick={handleShare}
+            className="p-2 text-slate-400 hover:text-white transition-colors" 
+            title="Copy Summary"
+          >
+            <Icons.Share size={20} />
+          </button>
+          <button 
+            onClick={handleExport}
+            className="hidden sm:flex px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg text-sm font-medium border border-white/10 items-center gap-2 transition-all"
+          >
+            <Icons.Download size={16} />
+            Export PDF
+          </button>
+        </div>
+      </nav>
+
+      <div className="container mx-auto pt-28 px-4 lg:px-8 max-w-7xl">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* Sidebar Navigation - Sticky */}
+          <aside className="hidden lg:block lg:col-span-3 no-print">
+            <div className="sticky top-28 space-y-8">
+              <div className="glass-panel p-5 rounded-xl">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
+                  {searchQuery ? 'Matching Sections' : 'Table of Contents'}
+                </h3>
+                <ul className="space-y-1">
+                  {filteredSections.map((section) => (
+                    <li key={section.id}>
+                      <button
+                        onClick={() => scrollToSection(section.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-200 border-l-2 ${
+                          activeSection === section.id
+                            ? 'bg-violet-500/10 text-violet-300 border-violet-500 font-medium'
+                            : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                      >
+                        {section.title}
+                      </button>
+                    </li>
+                  ))}
+                  {filteredSections.length === 0 && (
+                    <li className="text-slate-500 text-sm italic px-3">No matching sections found.</li>
+                  )}
+                </ul>
+              </div>
+
+              {/* Source/Citations Mini Panel */}
+              {report.sources && report.sources.length > 0 && !searchQuery && (
+                <div className="p-5">
+                   <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                     <Icons.Link size={12}/> Sources
+                   </h3>
+                   <ul className="space-y-3">
+                     {report.sources.slice(0, 3).map((s, i) => (
+                       <li key={i} className="text-xs">
+                         <a href={s.uri} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline line-clamp-2">
+                           {s.title}
+                         </a>
+                       </li>
+                     ))}
+                   </ul>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* Main Content */}
+          <main className="lg:col-span-9 space-y-8">
+            
+            {/* Header Section (Hide if searching to focus on results) */}
+            {!searchQuery && (
+              <div className="animate-slide-up print:animate-none">
+                <div className="flex items-center gap-2 text-violet-400 text-sm font-medium mb-2 print:text-gray-600">
+                  <span className="bg-violet-500/10 px-2 py-1 rounded border border-violet-500/20 print:border-gray-400 print:bg-transparent">Analysis Report</span>
+                  <span className="text-slate-500">•</span>
+                  <span>{report.date}</span>
+                </div>
+                <h1 className="text-4xl md:text-5xl font-display font-bold text-white leading-tight mb-6 print:text-black">
+                  {report.title}
+                </h1>
+                <p className="text-lg text-slate-300 leading-relaxed border-l-4 border-violet-500 pl-6 italic print:text-gray-800 print:border-gray-400">
+                  {report.executiveSummary}
+                </p>
+              </div>
+            )}
+
+            {/* Key Insights Grid (Hide if searching) */}
+            {!searchQuery && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-slide-up print:grid-cols-2" style={{ animationDelay: '0.1s' }}>
+                {report.keyInsights.map((insight, idx) => (
+                  <InsightCard key={idx} insight={insight} />
+                ))}
+              </div>
+            )}
+
+            {/* Dynamic Sections */}
+            <div className="space-y-4 animate-slide-up print:animate-none" style={{ animationDelay: '0.2s' }}>
+              {filteredSections.length > 0 ? (
+                filteredSections.map((section) => (
+                  <SectionRenderer 
+                    key={section.id} 
+                    section={section} 
+                    forceExpand={!!searchQuery} // Force expand if searching so user can see matches
+                  />
+                ))
+              ) : (
+                <div className="text-center py-20 bg-white/5 rounded-2xl border border-white/5 border-dashed no-print">
+                  <Icons.Search className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg">No content matches "{searchQuery}"</p>
+                  <button onClick={() => setSearchQuery('')} className="mt-4 text-violet-400 hover:text-violet-300 text-sm font-medium">Clear Search</button>
+                </div>
+              )}
+            </div>
+
+            {/* Conclusion Footer within report */}
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-8 border border-white/5 mt-12 text-center no-print">
+              <Icons.Book className="w-12 h-12 text-violet-500 mx-auto mb-4" />
+              <h3 className="text-xl font-display font-bold text-white mb-2">End of Report</h3>
+              <p className="text-slate-400 max-w-lg mx-auto mb-6">
+                This analysis was generated using AI and grounded in real-time data search. 
+                Political dynamics are fluid; consider this a snapshot in time.
+              </p>
+              <button onClick={onReset} className="px-6 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium transition-colors">
+                Start New Analysis
+              </button>
+            </div>
+
+            {/* Print Footer */}
+            <div className="hidden print:block mt-12 pt-8 border-t border-gray-200 text-center text-sm text-gray-500">
+              <p>Generated by PolitiSight India • Powered by Google Gemini</p>
+            </div>
+
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+};
